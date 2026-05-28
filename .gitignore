@@ -1,0 +1,12 @@
+﻿.idea/
+*/.idea/
+.vscode/
+__pycache__/
+*.pyc
+runs/
+datasets/
+weights/
+*.pt
+*.onnx
+*.engine
+*.pth

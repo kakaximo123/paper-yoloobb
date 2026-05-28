@@ -1,0 +1,13 @@
+#path: G:\AllData\1128realdata
+path: D:\examples_project\dataset\shineng
+train: images\train
+val: images\val
+
+#nc: 2
+#
+## Classes
+#names: ['1','0']
+nc: 1
+
+# Classes
+names: ['0']
