@@ -1,9 +1,12 @@
-import cv2
-import torch
-import numpy as np
-from ultralytics import YOLO
-import torch.nn as nn
 import os
+
+import cv2
+import numpy as np
+import torch
+import torch.nn as nn
+
+from ultralytics import YOLO
+
 
 class YOLOv11OBBGradCAM:
     def __init__(self, weight_path, target_layer_idx=-2, device=None):
@@ -17,8 +20,9 @@ class YOLOv11OBBGradCAM:
             p.requires_grad = True
 
         # 2. 获取基本信息
-        self.imgsz = getattr(self.yolo.overrides, 'imgsz', 640) if hasattr(self.yolo, 'overrides') else 640
-        if isinstance(self.imgsz, (list, tuple)): self.imgsz = self.imgsz[0]
+        self.imgsz = getattr(self.yolo.overrides, "imgsz", 640) if hasattr(self.yolo, "overrides") else 640
+        if isinstance(self.imgsz, (list, tuple)):
+            self.imgsz = self.imgsz[0]
         self.names = self.model.names
         self.nc = len(self.names)
 
@@ -44,15 +48,13 @@ class YOLOv11OBBGradCAM:
             layer.register_forward_hook(self.cls_hook)
 
     def _get_out_channels(self, layer):
-        """
-        递归查找层的输出通道数，兼容 Conv2d, Sequential, Ultralytics Conv 等多种结构
-        """
+        """递归查找层的输出通道数，兼容 Conv2d, Sequential, Ultralytics Conv 等多种结构."""
         # 情况1: 是标准的 Conv2d
         if isinstance(layer, nn.Conv2d):
             return layer.out_channels
 
         # 情况2: 是 Ultralytics 的 Conv 模块 (有 .conv 属性)
-        if hasattr(layer, 'conv'):
+        if hasattr(layer, "conv"):
             return self._get_out_channels(layer.conv)
 
         # 情况3: 是 Sequential 或 ModuleList (递归检查最后一个子模块)
@@ -66,12 +68,9 @@ class YOLOv11OBBGradCAM:
         return -1
 
     def _find_cls_layers(self):
-        """
-        自动寻找 Detect 头中负责分类的卷积层。
-        """
-        cls_layers = []
+        """自动寻找 Detect 头中负责分类的卷积层。."""
         # 检查 cv2 分支
-        if hasattr(self.detect_head, 'cv2'):
+        if hasattr(self.detect_head, "cv2"):
             layer = self.detect_head.cv2[0]
             out_ch = self._get_out_channels(layer)
             if out_ch == self.nc:
@@ -79,7 +78,7 @@ class YOLOv11OBBGradCAM:
                 return self.detect_head.cv2
 
         # 检查 cv3 分支
-        if hasattr(self.detect_head, 'cv3'):
+        if hasattr(self.detect_head, "cv3"):
             layer = self.detect_head.cv3[0]
             out_ch = self._get_out_channels(layer)
             if out_ch == self.nc:
@@ -87,7 +86,7 @@ class YOLOv11OBBGradCAM:
                 return self.detect_head.cv3
 
         print("Warning: Auto-detection of CLS branch failed. Defaulting to cv3.")
-        return getattr(self.detect_head, 'cv3', [])
+        return getattr(self.detect_head, "cv3", [])
 
     def forward_hook(self, module, input, output):
         self.activations = output
@@ -158,10 +157,12 @@ class YOLOv11OBBGradCAM:
             return img_bgr, np.zeros((self.orig_h, self.orig_w))
 
         gradients = self.gradients
-        if isinstance(gradients, (list, tuple)): gradients = gradients[0]
+        if isinstance(gradients, (list, tuple)):
+            gradients = gradients[0]
 
         activations = self.activations
-        if isinstance(activations, (list, tuple)): activations = activations[0]
+        if isinstance(activations, (list, tuple)):
+            activations = activations[0]
 
         print(f"DEBUG >>> Gradients Max: {gradients.abs().max():.6f}")
 
@@ -194,7 +195,7 @@ if __name__ == "__main__":
         overlay, _ = grad_cam.generate(img)
 
         # cv2.imshow("Correct Grad-CAM", overlay)
-        output_filename = os.path.join(r"D:\研究生\会议论文\test", '65.jpg')
+        output_filename = os.path.join(r"D:\研究生\会议论文\test", "65.jpg")
         cv2.imwrite(output_filename, overlay)
         # cv2.waitKey(0)
         # cv2.destroyAllWindows()
