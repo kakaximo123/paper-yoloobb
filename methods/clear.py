@@ -3,9 +3,7 @@ import shutil
 
 
 def clear_directory(target_dir):
-    """
-    清空指定文件夹内的所有内容（包含所有文件和子文件夹）
-    """
+    """清空指定文件夹内的所有内容（包含所有文件和子文件夹）."""
     if not os.path.exists(target_dir):
         print(f"路径 {target_dir} 不存在！")
         return
@@ -27,5 +25,5 @@ def clear_directory(target_dir):
 
 
 # 使用示例
-folder_path = r'D:\examples_project\ultralytics-main\runs\detect'  # 替换为你的真实路径
+folder_path = r"D:\examples_project\ultralytics-main\runs\detect"  # 替换为你的真实路径
 clear_directory(folder_path)
