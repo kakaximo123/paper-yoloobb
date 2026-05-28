@@ -8,7 +8,7 @@ def convert_labels_to_single_class(input_folder, output_folder, target_class_id=
         print(f"创建输出目录: {output_folder}")
 
     # 获取文件夹中所有的 txt 文件
-    files = [f for f in os.listdir(input_folder) if f.endswith('.txt')]
+    files = [f for f in os.listdir(input_folder) if f.endswith(".txt")]
 
     if not files:
         print("未在输入文件夹中找到 .txt 文件。")
@@ -20,7 +20,7 @@ def convert_labels_to_single_class(input_folder, output_folder, target_class_id=
         input_path = os.path.join(input_folder, filename)
         output_path = os.path.join(output_folder, filename)
 
-        with open(input_path, 'r', encoding='utf-8') as f:
+        with open(input_path, encoding="utf-8") as f:
             lines = f.readlines()
 
         new_lines = []
@@ -33,14 +33,14 @@ def convert_labels_to_single_class(input_folder, output_folder, target_class_id=
                 new_lines.append(" ".join(parts) + "\n")
 
         # 写入新文件
-        with open(output_path, 'w', encoding='utf-8') as f:
+        with open(output_path, "w", encoding="utf-8") as f:
             f.writelines(new_lines)
 
     print(f"处理完成！所有修改后的文件已保存至: {output_folder}")
 
 
 # --- 配置参数 ---
-input_dir = r'D:\examples_project\dataset\train_data\labels\val'  # 替换为你原始txt文件的路径
-output_dir = r'D:\examples_project\dataset\train_data\labels\val1'  # 替换为你想要保存结果的路径
+input_dir = r"D:\examples_project\dataset\train_data\labels\val"  # 替换为你原始txt文件的路径
+output_dir = r"D:\examples_project\dataset\train_data\labels\val1"  # 替换为你想要保存结果的路径
 
 convert_labels_to_single_class(input_dir, output_dir)
