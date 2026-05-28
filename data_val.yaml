@@ -9,4 +9,4 @@ val: images\test
 nc: 1
 
 # Classes
-names: ['0']
+names: ["0"]
