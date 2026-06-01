@@ -3,7 +3,7 @@ warnings.filterwarnings('ignore')
 from ultralytics import YOLO
 from ultralytics import YOLO
 if __name__ == '__main__':
-  model = YOLO('ultralytics/cfg/models/11/yolo11-obb-old.yaml')
+  model = YOLO('ultralytics/cfg/models/11/yolo11-obb.yaml')
   # model.load(r'yolo11n-obb.pt')  #注释则不加载
   # model = YOLO('ultralytics/cfg/models/v8/yolov8-obb.yaml')
   # model.load(r'yolov8n-obb.pt')  # 注释则不加载/
@@ -12,7 +12,7 @@ if __name__ == '__main__':
     epochs=120,  #训练轮次总数
     batch=10,  #批量大小，即单次输入多少图片训练
     imgsz=640,  #训练图像尺寸
-    workers=8,  #加载数据的工作线程数
+    workers=4,  #加载数据的工作线程数
     device= 0,  #指定训练的计算设备，无nvidia显卡则改为 'cpu'
     optimizer='SGD',  #训练使用优化器，可选 auto,SGD,Adam,AdamW 等
     amp= True,  #True 或者 False, 解释为：自动混合精度(AMP) 训练
