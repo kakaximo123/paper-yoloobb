@@ -1255,6 +1255,7 @@ class CoalAnomalyAttention(nn.Module):
         # 4. 融合输出
         out = x + (x_weighted * spatial_weight)
         return out
+    #这是一次分支调试
 
 
 class C2fCAA(C2f):
