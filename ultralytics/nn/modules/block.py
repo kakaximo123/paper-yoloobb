@@ -1197,57 +1197,62 @@ class CoalC2f(C2f):
 
 class CoalAnomalyAttention(nn.Module):
     """
-    专门为煤流杂物检测设计的注意力机制 (CAA)。
-    1. 局部对比度增强：突出煤流中非煤杂物的边缘。
-    2. 全局背景抑制：针对深绿色/黑色背景进行特征过滤。
-    3. 通道显著性：学习杂物共有的语义特征（如颜色异常、形状不规则性）。
-    """
+        优化的 CAA 机制 (Optimized CAA)
+        1. 修复了空洞卷积缺失的问题，可灵活调整感受野。
+        2. 通道注意力引入 Max Pooling，强化对深色背景下高频异常信号的捕捉。
+        3. 提升了对高速运动模糊和不规则异物的特征鉴别能力。
+        """
 
-    def __init__(self, c1, k=7):
+    def __init__(self, c1, k=7, dilation=2, reduction=4):
         super().__init__()
         self.c1 = c1
-        # 局部纹理对比分支：使用大核空洞卷积提取局部不规则性
+
+        # 优化点 1: 真正实现空洞卷积，扩大感受野以获取更广的煤流背景
+        # padding 计算公式: dilation * (kernel_size - 1) // 2
+        pad = dilation * (k - 1) // 2
         self.local_contrast = nn.Sequential(
-            nn.Conv2d(c1, c1, kernel_size=k, padding=k // 2, groups=c1, bias=False),
+            nn.Conv2d(c1, c1, kernel_size=k, padding=pad, dilation=dilation, groups=c1, bias=False),
             nn.BatchNorm2d(c1),
             nn.SiLU()
         )
 
-        # 全局上下文压缩
-        self.global_pool = nn.AdaptiveAvgPool2d(1)
+        # 优化点 2: 引入 MaxPool，防止小块高亮杂物信号被平均化淹没
+        self.global_avg_pool = nn.AdaptiveAvgPool2d(1)
+        self.global_max_pool = nn.AdaptiveMaxPool2d(1)
 
-        # 通道注意力：识别哪些特征通道对杂物更敏感
-        self.channel_attn = nn.Sequential(
-            nn.Conv2d(c1, c1 // 4, 1, bias=False),
+        # 通道注意力 MLP 共享权重
+        mid_channels = max(4, c1 // reduction)
+        self.channel_mlp = nn.Sequential(
+            nn.Conv2d(c1, mid_channels, 1, bias=False),
             nn.SiLU(),
-            nn.Conv2d(c1 // 4, c1, 1, bias=False),
-            nn.Sigmoid()
+            nn.Conv2d(mid_channels, c1, 1, bias=False)
         )
 
-        # 空间掩码：利用像素间差异定位杂物
+        # 优化点 3: 空间掩码卷积，可以根据推理速度需求将 kernel_size 调整为 5 或 3
+        spatial_k = 5
         self.spatial_attn = nn.Sequential(
-            nn.Conv2d(2, 1, kernel_size=7, padding=3, bias=False),
+            nn.Conv2d(2, 1, kernel_size=spatial_k, padding=spatial_k // 2, bias=False),
             nn.Sigmoid()
         )
 
     def forward(self, x):
-        # x: [B, C, H, W]
-
-        # 1. 局部特征提取与对比
+        # 1. 局部特征提取与对比 (提取高频突变)
         local_feat = self.local_contrast(x)
-        diff_feat = x - local_feat  # 计算原始特征与平滑特征的差异，突出“突变”部分
+        diff_feat = x - local_feat
 
-        # 2. 通道维度加权 (关注哪些特征能区分煤和杂物)
-        avg_x = self.global_pool(diff_feat)
-        channel_weight = self.channel_attn(avg_x)
+        # 2. 通道维度加权 (Avg + Max 并联)
+        avg_out = self.channel_mlp(self.global_avg_pool(diff_feat))
+        max_out = self.channel_mlp(self.global_max_pool(diff_feat))
+        channel_weight = torch.sigmoid(avg_out + max_out)
+
         x_weighted = diff_feat * channel_weight
 
-        # 3. 空间维度加权 (定位杂物位置)
-        avg_out = torch.mean(x_weighted, dim=1, keepdim=True)
-        max_out, _ = torch.max(x_weighted, dim=1, keepdim=True)
-        spatial_weight = self.spatial_attn(torch.cat([avg_out, max_out], dim=1))
+        # 3. 空间维度加权 (定位异物)
+        spatial_avg = torch.mean(x_weighted, dim=1, keepdim=True)
+        spatial_max, _ = torch.max(x_weighted, dim=1, keepdim=True)
+        spatial_weight = self.spatial_attn(torch.cat([spatial_avg, spatial_max], dim=1))
 
-        # 4. 融合输出：残差连接保持原始语义，同时叠加显著性特征
+        # 4. 融合输出
         out = x + (x_weighted * spatial_weight)
         return out
 
