@@ -139,52 +139,96 @@ class BboxLoss(nn.Module):
         return loss_iou, loss_dfl
 
 #🩷🩷🩷🩷🩷🩷
-def focaler_iou(iou, d=0.0, u=0.95):
+def focaler_iou(iou: torch.Tensor, d: float = 0.0, u: float = 0.95) -> torch.Tensor:
     """
     Focaler-IoU 核心变换
     利用线性区间映射，将 [d, u] 区间拉伸至 [0, 1]，实现梯度重分配
     """
     iou_focaler = (iou - d) / (u - d)
-    # 使用 clamp 截断，防止数值越界导致 Loss 变为负数或梯度爆炸
-    iou_focaler = torch.clamp(iou_focaler, min=0.0, max=1.0)
-    return iou_focaler
+    # 使用非原地 clamp，避免破坏计算图
+    return iou_focaler.clamp(0.0, 1.0)
 #🩷🩷🩷🩷🩷🩷
+def saf_loss(
+    iou: torch.Tensor,
+    target_bboxes: torch.Tensor,
+    alpha: float = 0.15,
+    beta: float = 0.4,
+    gamma: float = 0.7,
+    d: float = 0.0,
+    u: float = 0.95,
+    eps: float = 1e-7,
+) -> torch.Tensor:
+    """
+    Shape-Aware Focaler ProbIoU Loss (SAF-Loss)
+    针对 OBB 场景：根据目标长宽比动态调整梯度权重，并利用 Focaler 机制逼近高阈值边界，专攻 mAP50-95。
+
+    Args:
+        iou (torch.Tensor): 官方 probiou 计算出的基础 1D IoU 张量 [N]
+        target_bboxes (torch.Tensor): 真实旋转框 [N, 5] (cx, cy, w, h, angle)
+        alpha (float): 形状感知的敏感系数 (建议 0.1~0.3)
+        d, u (float): Focaler 映射的下界和上界
+    """
+    # 1. Focaler 变换：将 IoU 区间拉伸，强迫模型向高阈值逼近 (专攻 mAP50-95)
+    base_iou = iou.squeeze(-1).clamp(0.0, 1.0)
+    iou_focaler = focaler_iou(base_iou, d=d, u=u)
+
+    # 2. 提取真实框的宽和高
+    w = target_bboxes[..., 2].clamp_min(eps)
+    h = target_bboxes[..., 3].clamp_min(eps)
+
+    # 3. 计算长宽比 (Aspect Ratio, AR) -> 始终 >= 1.0
+    ar = torch.maximum(w, h) / torch.minimum(w, h)
+
+    # 4. 形状感知权重调制 (Shape-Aware Weight)
+    # 对正方形(ar=1)，log(1)=0，权重为 1.0 (正常惩罚)
+    # 对细长条(ar=10)，权重会被放大，强迫网络死磕细长条的边缘和角度
+    shape_weight = (1.0 + alpha * torch.log(ar)).clamp(1.0, 1.5)
+    quality_weight = (1.0 + beta * (1.0 - base_iou.detach())).clamp(1.0, 1.4)
+
+    # 5. 计算最终的自适应 Loss
+    stable_term = 1.0 - base_iou
+    focal_term = (1.0 - iou_focaler).pow(gamma)
+    return 0.5 * stable_term + 0.5 * shape_weight * quality_weight * focal_term
+
 
 class RotatedBboxLoss(BboxLoss):
     """Criterion class for computing training losses for rotated bounding boxes."""
 
     def __init__(self, reg_max: int):
-        """Initialize the RotatedBboxLoss module with regularization maximum and DFL settings."""
         super().__init__(reg_max)
 
     def forward(
-        self,
-        pred_dist: torch.Tensor,
-        pred_bboxes: torch.Tensor,
-        anchor_points: torch.Tensor,
-        target_bboxes: torch.Tensor,
-        target_scores: torch.Tensor,
-        target_scores_sum: torch.Tensor,
-        fg_mask: torch.Tensor,
+            self,
+            pred_dist: torch.Tensor,
+            pred_bboxes: torch.Tensor,
+            anchor_points: torch.Tensor,
+            target_bboxes: torch.Tensor,
+            target_scores: torch.Tensor,
+            target_scores_sum: torch.Tensor,
+            fg_mask: torch.Tensor,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """Compute IoU and DFL losses for rotated bounding boxes."""
-        # 🐥🐥🐥🐥🐥🐥
         weight = target_scores.sum(-1)[fg_mask].unsqueeze(-1)
-        iou = probiou(pred_bboxes[fg_mask], target_bboxes[fg_mask])
-        loss_iou = ((1.0 - iou) * weight).sum() / target_scores_sum
-        # 🐥🐥🐥🐥🐥🐥
-        # 🩷🩷🩷🩷🩷🩷
-        # weight = target_scores.sum(-1)[fg_mask].unsqueeze(-1)
-        # # 1. 计算原始的旋转框高斯重叠度 ProbIoU
-        # iou = probiou(pred_bboxes[fg_mask], target_bboxes[fg_mask])
-        #
-        # # 2. 引入 Focaler 变换（此处 u=0.95, d=0.0 为论文推荐配置）
-        # iou_focal = focaler_iou(iou, d=0.0, u=0.95)
 
-        # # 3. 使用重构后的 iou_focal 计算最终的回归损失
-        # loss_iou = ((1.0 - iou_focal) * weight).sum() / target_scores_sum
-        # 🩷🩷🩷🩷🩷🩷
-        # DFL loss
+        # 1. 调用官方底层的概率重叠度，保证数学基础绝对稳定
+        base_iou = probiou(pred_bboxes[fg_mask], target_bboxes[fg_mask], CIoU=True)
+
+        # 2. 🚀 注入你的顶级创新：形状感知焦点重叠度损失 (SAF-Loss)
+        loss_saf = saf_loss(
+            iou=base_iou,
+            target_bboxes=target_bboxes[fg_mask],
+            beta=0.4,
+            gamma=0.7,
+            alpha=0.2,  # 细长目标惩罚系数，如果细长杂物很难检，可调高到 0.3
+            d=0.0,
+            u=0.95
+        )
+
+        # 结合类别置信度计算最终的边界框回归损失
+        # 注意：saf_loss 返回的是 [N]，weight 是 [N, 1]，相乘自动广播
+        loss_iou = (loss_saf.unsqueeze(-1) * weight).sum() / target_scores_sum
+
+        # DFL loss (保持官方逻辑不变)
         if self.dfl_loss:
             target_ltrb = bbox2dist(anchor_points, xywh2xyxy(target_bboxes[..., :4]), self.dfl_loss.reg_max - 1)
             loss_dfl = self.dfl_loss(pred_dist[fg_mask].view(-1, self.dfl_loss.reg_max), target_ltrb[fg_mask]) * weight
@@ -193,7 +237,50 @@ class RotatedBboxLoss(BboxLoss):
             loss_dfl = torch.tensor(0.0).to(pred_dist.device)
 
         return loss_iou, loss_dfl
-
+# class RotatedBboxLoss(BboxLoss):
+#     """Criterion class for computing training losses for rotated bounding boxes."""
+#
+#     def __init__(self, reg_max: int):
+#         """Initialize the RotatedBboxLoss module with regularization maximum and DFL settings."""
+#         super().__init__(reg_max)
+#
+#     def forward(
+#         self,
+#         pred_dist: torch.Tensor,
+#         pred_bboxes: torch.Tensor,
+#         anchor_points: torch.Tensor,
+#         target_bboxes: torch.Tensor,
+#         target_scores: torch.Tensor,
+#         target_scores_sum: torch.Tensor,
+#         fg_mask: torch.Tensor,
+#     ) -> Tuple[torch.Tensor, torch.Tensor]:
+#         """Compute IoU and DFL losses for rotated bounding boxes."""
+#         # 🐥🐥🐥🐥🐥🐥
+#         weight = target_scores.sum(-1)[fg_mask].unsqueeze(-1)
+#         iou = probiou(pred_bboxes[fg_mask], target_bboxes[fg_mask])
+#         loss_iou = ((1.0 - iou) * weight).sum() / target_scores_sum
+#         # 🐥🐥🐥🐥🐥🐥
+#         # 🩷🩷🩷🩷🩷🩷
+#         # weight = target_scores.sum(-1)[fg_mask].unsqueeze(-1)
+#         # # 1. 计算原始的旋转框高斯重叠度 ProbIoU
+#         # iou = probiou(pred_bboxes[fg_mask], target_bboxes[fg_mask])
+#         #
+#         # # 2. 引入 Focaler 变换（此处 u=0.95, d=0.0 为论文推荐配置）
+#         # iou_focal = focaler_iou(iou, d=0.0, u=0.95)
+#
+#         # # 3. 使用重构后的 iou_focal 计算最终的回归损失
+#         # loss_iou = ((1.0 - iou_focal) * weight).sum() / target_scores_sum
+#         # 🩷🩷🩷🩷🩷🩷
+#         # DFL loss
+#         if self.dfl_loss:
+#             target_ltrb = bbox2dist(anchor_points, xywh2xyxy(target_bboxes[..., :4]), self.dfl_loss.reg_max - 1)
+#             loss_dfl = self.dfl_loss(pred_dist[fg_mask].view(-1, self.dfl_loss.reg_max), target_ltrb[fg_mask]) * weight
+#             loss_dfl = loss_dfl.sum() / target_scores_sum
+#         else:
+#             loss_dfl = torch.tensor(0.0).to(pred_dist.device)
+#
+#         return loss_iou, loss_dfl
+#
 
 class KeypointLoss(nn.Module):
     """Criterion class for computing keypoint losses."""
