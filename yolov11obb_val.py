@@ -1,5 +1,4 @@
 from ultralytics import YOLO
-import torch
 
 
 def main():
@@ -35,9 +34,9 @@ def main():
         task="obb",
         # conf=0.3,
         # iou=0.9,
-        iou=0.96,  #模糊训练集0.8
+        iou=0.96,  # 模糊训练集0.8
         # iou=0.96, #普通训练集0.93
-        workers=0
+        workers=0,
     )
 
     # ------------------------------------------------------------------
@@ -50,8 +49,8 @@ def main():
     # 提取速度 (results.speed 是一个字典，单位 ms)
     # 包含 preprocess, inference, postprocess
     speed_dict = results.speed
-    inference_time = speed_dict['inference']
-    total_time = speed_dict['preprocess'] + speed_dict['inference'] + speed_dict['postprocess']
+    inference_time = speed_dict["inference"]
+    total_time = speed_dict["preprocess"] + speed_dict["inference"] + speed_dict["postprocess"]
 
     # 计算 FPS (1000ms / total_time_per_image)
     fps = 1000.0 / total_time if total_time > 0 else 0

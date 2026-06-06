@@ -1,4 +1,5 @@
 from pathlib import Path
+
 from ultralytics import YOLO
 
 if __name__ == "__main__":
@@ -10,4 +11,3 @@ if __name__ == "__main__":
 
     model = YOLO(str(weights_path))
     model.train(resume=True, workers=0)
-

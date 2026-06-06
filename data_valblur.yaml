@@ -11,4 +11,4 @@ val: images\test-blur
 nc: 1
 
 # Classes
-names: ['0']
+names: ["0"]
