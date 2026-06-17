@@ -7,6 +7,7 @@ Usage:
 """
 
 import gc
+import inspect
 import math
 import os
 import subprocess
@@ -247,6 +248,91 @@ class BaseTrainer:
             world_size=world_size,
         )
 
+    @staticmethod
+    def _git_branch_name() -> str:
+        """Return the current git branch name if available."""
+        try:
+            repo_root = Path(__file__).resolve().parents[2]
+            result = subprocess.run(
+                ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+                cwd=repo_root,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            branch = result.stdout.strip()
+            return branch or "unknown"
+        except Exception:
+            return "unknown"
+
+    def _log_innovation_status(self):
+        """Log whether the proposed OBB upgrades are active in the current training code."""
+        if getattr(self.args, "task", "") != "obb" or RANK not in {-1, 0}:
+            return
+
+        model = self.model.module if hasattr(self.model, "module") else self.model
+        criterion = getattr(model, "criterion", None)
+        if criterion is None and hasattr(model, "init_criterion"):
+            try:
+                criterion = model.init_criterion()
+                model.criterion = criterion
+            except Exception:
+                criterion = None
+
+        c2fcaa_count = sum(m.__class__.__name__ == "C2fCAA" for m in model.modules())
+        has_c2fcaa = c2fcaa_count > 0
+
+        assigner = getattr(criterion, "assigner", None)
+        assigner_name = assigner.__class__.__name__ if assigner is not None else "None"
+        has_saqa_tal = False
+        if assigner is not None:
+            if hasattr(assigner, "angle_weight") and hasattr(assigner, "shape_weight"):
+                has_saqa_tal = True
+            else:
+                try:
+                    source = inspect.getsource(assigner.get_box_metrics)
+                    has_saqa_tal = "angle_factor" in source and "shape_factor" in source
+                except (OSError, TypeError):
+                    code = getattr(assigner.get_box_metrics, "__code__", None)
+                    names = set(code.co_names) if code is not None else set()
+                    has_saqa_tal = {"angle_factor", "shape_factor"} <= names or {
+                        "angle_weight",
+                        "shape_weight",
+                    } <= names
+
+        bbox_loss = getattr(criterion, "bbox_loss", None)
+        bbox_loss_name = bbox_loss.__class__.__name__ if bbox_loss is not None else "None"
+        has_sfp_probiou = False
+        if bbox_loss is not None and hasattr(bbox_loss, "forward"):
+            try:
+                source = inspect.getsource(bbox_loss.forward)
+                has_sfp_probiou = "shape_focal_probiou_loss" in source or "focaler_iou" in source
+            except (OSError, TypeError):
+                code = getattr(bbox_loss.forward, "__code__", None)
+                names = set(code.co_names) if code is not None else set()
+                has_sfp_probiou = "shape_focal_probiou_loss" in names or "focaler_iou" in names
+
+        branch = self._git_branch_name()
+        model_name = getattr(self.args, "model", "unknown")
+        LOGGER.info(colorstr("Innovation check:") + f" branch={branch} model={model_name}")
+        LOGGER.info(
+            "  C2fCAA: %s%s",
+            "ENABLED" if has_c2fcaa else "DISABLED",
+            f" (count={c2fcaa_count})" if c2fcaa_count else "",
+        )
+        LOGGER.info(
+            "  SAQA-TAL: %s%s",
+            "ENABLED" if has_saqa_tal else "DISABLED",
+            f" (assigner={assigner_name})" if assigner_name != "None" else "",
+        )
+        LOGGER.info(
+            "  SFP-ProbIoU: %s%s",
+            "ENABLED" if has_sfp_probiou else "DISABLED",
+            f" (loss={bbox_loss_name})" if bbox_loss_name != "None" else "",
+        )
+        if has_c2fcaa and has_saqa_tal and has_sfp_probiou:
+            LOGGER.info("  all three proposed upgrades are active in this training run.")
+
     def _setup_train(self, world_size):
         """Build dataloaders and optimizer on correct rank process."""
         # Model
@@ -254,6 +340,7 @@ class BaseTrainer:
         ckpt = self.setup_model()
         self.model = self.model.to(self.device)
         self.set_model_attributes()
+        self._log_innovation_status()
 
         # Freeze layers
         freeze_list = (
