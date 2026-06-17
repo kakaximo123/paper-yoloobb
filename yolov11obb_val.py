@@ -6,7 +6,7 @@ def main():
     # ------------------------------------------------------------------
     # 1. 设置模型路径
     # ------------------------------------------------------------------
-    model_path = r"D:\examples_project\python projects\self-enhance-all\ultralytics-main-3\ultralytics-main\runs\obb\train71\weights\best.pt"
+    model_path = r"D:\examples_project\ultralytics-main\runs\obb\train29\weights\best.pt"
     model = YOLO(model_path)
 
     # ------------------------------------------------------------------
@@ -35,7 +35,7 @@ def main():
         task="obb",
         # conf=0.3,
         # iou=0.9,
-        iou=0.96,  #模糊训练集0.8
+        iou=0.8,  #模糊训练集0.8
         # iou=0.96, #普通训练集0.93
         workers=0
     )
