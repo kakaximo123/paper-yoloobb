@@ -1,4 +1,4 @@
-# Ultralytics 🚀 AGPL-3.0 License - https://ultralytics.com/license
+﻿# Ultralytics 馃殌 AGPL-3.0 License - https://ultralytics.com/license
 
 from typing import Any, Dict, List, Tuple
 
@@ -138,17 +138,6 @@ class BboxLoss(nn.Module):
 
         return loss_iou, loss_dfl
 
-#🩷🩷🩷🩷🩷🩷
-def focaler_iou(iou, d=0.0, u=0.95):
-    """
-    Focaler-IoU 核心变换
-    利用线性区间映射，将 [d, u] 区间拉伸至 [0, 1]，实现梯度重分配
-    """
-    iou_focaler = (iou - d) / (u - d)
-    # 使用 clamp 截断，防止数值越界导致 Loss 变为负数或梯度爆炸
-    iou_focaler = torch.clamp(iou_focaler, min=0.0, max=1.0)
-    return iou_focaler
-#🩷🩷🩷🩷🩷🩷
 
 class RotatedBboxLoss(BboxLoss):
     """Criterion class for computing training losses for rotated bounding boxes."""
@@ -168,22 +157,11 @@ class RotatedBboxLoss(BboxLoss):
         fg_mask: torch.Tensor,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """Compute IoU and DFL losses for rotated bounding boxes."""
-        # 🐥🐥🐥🐥🐥🐥
+        # 馃惀馃惀馃惀馃惀馃惀馃惀
         weight = target_scores.sum(-1)[fg_mask].unsqueeze(-1)
         iou = probiou(pred_bboxes[fg_mask], target_bboxes[fg_mask])
         loss_iou = ((1.0 - iou) * weight).sum() / target_scores_sum
-        # 🐥🐥🐥🐥🐥🐥
-        # 🩷🩷🩷🩷🩷🩷
-        # weight = target_scores.sum(-1)[fg_mask].unsqueeze(-1)
-        # # 1. 计算原始的旋转框高斯重叠度 ProbIoU
-        # iou = probiou(pred_bboxes[fg_mask], target_bboxes[fg_mask])
-        #
-        # # 2. 引入 Focaler 变换（此处 u=0.95, d=0.0 为论文推荐配置）
-        # iou_focal = focaler_iou(iou, d=0.0, u=0.95)
 
-        # # 3. 使用重构后的 iou_focal 计算最终的回归损失
-        # loss_iou = ((1.0 - iou_focal) * weight).sum() / target_scores_sum
-        # 🩷🩷🩷🩷🩷🩷
         # DFL loss
         if self.dfl_loss:
             target_ltrb = bbox2dist(anchor_points, xywh2xyxy(target_bboxes[..., :4]), self.dfl_loss.reg_max - 1)
@@ -355,7 +333,7 @@ class v8SegmentationLoss(v8DetectionLoss):
             mask_gt = gt_bboxes.sum(2, keepdim=True).gt_(0.0)
         except RuntimeError as e:
             raise TypeError(
-                "ERROR ❌ segment dataset incorrectly formatted or not a segment dataset.\n"
+                "ERROR 鉂?segment dataset incorrectly formatted or not a segment dataset.\n"
                 "This error can occur when incorrectly training a 'segment' model on a 'detect' dataset, "
                 "i.e. 'yolo train model=yolo11n-seg.pt data=coco8.yaml'.\nVerify your dataset is a "
                 "correctly formatted 'segment' dataset using 'data=coco8-seg.yaml' "
@@ -730,7 +708,7 @@ class v8OBBLoss(v8DetectionLoss):
             mask_gt = gt_bboxes.sum(2, keepdim=True).gt_(0.0)
         except RuntimeError as e:
             raise TypeError(
-                "ERROR ❌ OBB dataset incorrectly formatted or not a OBB dataset.\n"
+                "ERROR 鉂?OBB dataset incorrectly formatted or not a OBB dataset.\n"
                 "This error can occur when incorrectly training a 'OBB' model on a 'detect' dataset, "
                 "i.e. 'yolo train model=yolo11n-obb.pt data=coco8.yaml'.\nVerify your dataset is a "
                 "correctly formatted 'OBB' dataset using 'data=dota8.yaml' "
