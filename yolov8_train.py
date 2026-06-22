@@ -4,7 +4,7 @@ from ultralytics import YOLO
 from ultralytics import YOLO
 if __name__ == '__main__':
   model = YOLO('ultralytics/cfg/models/11/yolo11-obb.yaml')
-  # model.load(r'yolo11n-obb.pt')  #注释则不加载
+  model.load(r'yolo11n-obb.pt')  #注释则不加载
   # model = YOLO('ultralytics/cfg/models/v8/yolov8-obb.yaml')
   # model.load(r'yolov8n-obb.pt')  # 注释则不加载/
   results = model.train(
